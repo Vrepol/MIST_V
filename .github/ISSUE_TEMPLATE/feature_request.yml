@@ -1,0 +1,106 @@
+name: Feature request
+description: Propose a user-facing MistV feature
+title: "[Feature]: "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        MistV is a lightweight, temporary, terminal-first encrypted chat tool.
+
+        Good feature requests should preserve this boundary: no accounts, no social graph, no permanent chat history, no cloud attachment library, and no heavy admin backend.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user problem does this solve?
+      placeholder: "Example: It is hard to use MistV over weak VPS connections because attachment transfer times out."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What should MistV do?
+      placeholder: "Describe the smallest useful behavior change."
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What other options did you consider, and why are they worse?
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - Client startup / onboarding
+        - Server hosting
+        - Invite code flow
+        - Room/session lifecycle
+        - Text chat
+        - Attachments
+        - TUI / keyboard / rendering
+        - Clipboard
+        - Security / privacy
+        - Transport / networking
+        - IPv6
+        - Documentation
+        - Build / release / CI
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Suggested priority
+      description: Maintainers may change this.
+      options:
+        - P0 - Security, data loss, broken core flow
+        - P1 - Important usability or reliability improvement
+        - P2 - Nice improvement, not urgent
+        - P3 - Idea / future exploration
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: MistV scope check
+      options:
+        - label: This does not require user accounts, profiles, friends, or long-term identity.
+          required: true
+        - label: This does not require persistent chat history, offline messages, or cloud attachment storage.
+          required: true
+        - label: This does not require a complex web admin panel or backend platform.
+          required: true
+        - label: This keeps the default temporary-session flow simple.
+          required: true
+
+  - type: textarea
+    id: security
+    attributes:
+      label: Security / privacy impact
+      description: Does this touch encryption, keys, invites, server trust, attachment plaintext, logs, or temp files?
+      placeholder: "Explain the trust boundary impact, or write 'No security/privacy impact expected'."
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: What must be true before this is considered done?
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: true
