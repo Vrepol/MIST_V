@@ -1,0 +1,122 @@
+name: Bug report
+description: Report a reproducible MistV bug
+title: "[Bug]: "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for helping improve MistV.
+
+        Please do not include server passwords, room credentials, invite secrets, file keys, private messages, or private attachments in a public issue.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What went wrong?
+      placeholder: "Example: The client disconnects when receiving a file over a slow VPS connection."
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Provide the smallest reproducible sequence.
+      placeholder: |
+        1. Start server with ...
+        2. Start two clients ...
+        3. Send ...
+        4. Observe ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: "What should MistV do instead?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      placeholder: "What actually happened? Include sanitized logs if useful."
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      multiple: true
+      options:
+        - Client startup / connection
+        - Server startup / room management
+        - Invite code flow
+        - Text chat
+        - Attachment sending
+        - Attachment receiving
+        - TUI rendering / keyboard input
+        - Clipboard
+        - Encryption / key rotation
+        - Transport / ACK / retry
+        - IPv4 / IPv6 / networking
+        - Build / CI
+        - Documentation
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: MistV version / commit
+      description: Paste the commit SHA, tag, or branch if known.
+      placeholder: "main@abc1234"
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      multiple: true
+      options:
+        - Linux
+        - macOS
+        - Windows
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: terminal
+    attributes:
+      label: Terminal / shell
+      placeholder: "Windows Terminal, iTerm2, Terminal.app, GNOME Terminal, PowerShell, bash, zsh, etc."
+
+  - type: textarea
+    id: network
+    attributes:
+      label: Network context
+      description: Only include non-sensitive details.
+      placeholder: "LAN / VPS / Tailscale / public IP / IPv6 / weak bandwidth / high latency"
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Sanitized logs or screenshots
+      description: Remove private messages, passwords, room keys, invite secrets, IPs if needed.
+      render: shell
+
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety checklist
+      options:
+        - label: I removed private messages, server passwords, room credentials, invite secrets, and file keys.
+          required: true
+        - label: This is not a private exploitable vulnerability report. If it is, I will use GitHub Security Advisories instead.
+          required: true
