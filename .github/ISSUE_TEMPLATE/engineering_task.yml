@@ -1,0 +1,110 @@
+name: Engineering task
+description: Track refactor, security hardening, tests, CI, protocol work, or internal cleanup
+title: "[Task]: "
+labels: []
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for implementation work that may not be a direct user-facing feature: refactors, test coverage, security hardening, CI, protocol cleanup, documentation architecture, or reliability work.
+
+  - type: textarea
+    id: background
+    attributes:
+      label: Background
+      description: What technical problem or project risk does this address?
+      placeholder: "Example: The local host mode launches a server binary; path resolution needs to be deterministic and safe."
+    validations:
+      required: true
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What should be true after this task is complete?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category
+      multiple: true
+      options:
+        - Security hardening
+        - Cryptography / key management
+        - Protocol / transport
+        - Attachment pipeline
+        - TUI / input handling
+        - Server lifecycle
+        - Client lifecycle
+        - Testing
+        - CI / release engineering
+        - Documentation
+        - Refactor
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - P0 - Security, data loss, broken core flow
+        - P1 - Important reliability or maintainability work
+        - P2 - Useful cleanup or improvement
+        - P3 - Future exploration
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Prefer concrete, testable criteria.
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+        - [ ] Tests added or updated
+    validations:
+      required: true
+
+  - type: textarea
+    id: implementation
+    attributes:
+      label: Implementation notes
+      description: Mention likely files, modules, APIs, and constraints.
+      placeholder: |
+        Likely files:
+        - src/...
+
+        Notes:
+        - ...
+
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks and edge cases
+      description: What could break? What input should be treated as untrusted?
+      placeholder: "Consider malicious server, malformed invite, hostile file name, bad clipboard data, slow network, duplicate packets, etc."
+
+  - type: textarea
+    id: non_goals
+    attributes:
+      label: Non-goals
+      description: What should this task explicitly not do?
+      placeholder: |
+        - No user accounts
+        - No persistent chat history
+        - No cloud storage
+
+  - type: textarea
+    id: tests
+    attributes:
+      label: Test plan
+      description: Unit, integration, manual, or CI checks.
+      placeholder: |
+        - [ ] cargo fmt --all -- --check
+        - [ ] cargo clippy --all-targets --all-features -- -D warnings
+        - [ ] cargo test --all --all-features --locked
