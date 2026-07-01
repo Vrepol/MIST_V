@@ -1,8 +1,11 @@
 use anyhow::Result;
 use clap::Parser;
 use futures_util::FutureExt;
+use socket2::{Domain, Protocol, Socket, Type};
 use std::{
     collections::HashMap,
+    io,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
     panic::AssertUnwindSafe,
     path::Path,
     sync::{Arc, Mutex},
@@ -64,9 +67,36 @@ pub(crate) async fn run_with_logger(
     password: String,
     logger: ServerLogger,
 ) -> Result<()> {
-    let bind_addr = format!("0.0.0.0:{port}");
-    let listener = TcpListener::bind(&bind_addr).await?;
+    let listener = bind_server_listener(port).await?;
     run_with_bound_listener(listener, password, logger).await
+}
+
+async fn bind_server_listener(port: u16) -> io::Result<TcpListener> {
+    match bind_dual_stack_listener(port) {
+        Ok(listener) => Ok(listener),
+        Err(v6_err) => {
+            let bind_addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), port);
+            TcpListener::bind(bind_addr).await.map_err(|v4_err| {
+                io::Error::new(
+                    v4_err.kind(),
+                    format!("failed to bind dual-stack IPv6 ({v6_err}) or IPv4 ({v4_err})"),
+                )
+            })
+        }
+    }
+}
+
+fn bind_dual_stack_listener(port: u16) -> io::Result<TcpListener> {
+    let socket = Socket::new(Domain::IPV6, Type::STREAM, Some(Protocol::TCP))?;
+    socket.set_only_v6(false)?;
+    #[cfg(unix)]
+    socket.set_reuse_address(true)?;
+    socket.bind(&SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), port).into())?;
+    socket.listen(1024)?;
+    socket.set_nonblocking(true)?;
+
+    let listener: std::net::TcpListener = socket.into();
+    TcpListener::from_std(listener)
 }
 
 pub(crate) async fn run_with_bound_listener(

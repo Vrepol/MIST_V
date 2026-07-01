@@ -11,6 +11,7 @@ use crate::config::{
     default_client_server, CLIENT_SERVER_PRESETS, DEFAULT_SERVER_PASSWORD, DEFAULT_SERVER_PORT,
 };
 use crate::ui::banner;
+use crate::util::endpoint::{format_host_port, normalize_endpoint};
 
 pub fn init_color() {
     if std::env::var_os("NO_COLOR").is_some() {
@@ -156,7 +157,8 @@ fn choose_local_advertised_addr(username: &str, port: u16) -> io::Result<Option<
             trimmed
         };
 
-        return Ok(Some(format!("{host}:{port}")));
+        let advertised = normalize_endpoint(&host).unwrap_or_else(|| format_host_port(&host, port));
+        return Ok(Some(advertised));
     }
 }
 pub fn initial_name() -> io::Result<String> {
@@ -221,7 +223,6 @@ fn configure_local_server(username: &str) -> io::Result<Option<String>> {
 
 pub fn initial_serveraddr(username: &str) -> io::Result<String> {
     // 交互循环直到拿到合法输入
-    let host_port_re = regex::Regex::new(r"^[A-Za-z0-9.\-]+:\d+$").expect("regex should compile");
     let mut notice: Option<String> = None;
     let chosen = loop {
         render_startup(Some(username), notice.as_deref())?;
@@ -259,13 +260,13 @@ pub fn initial_serveraddr(username: &str) -> io::Result<String> {
                 break format!("{}&{}", server.addr, key);
             }
         }
-        // 2️⃣ host:port / IP:port
-        if host_port_re.is_match(&s) {
+        // 2️⃣ host:port / IP:port / [IPv6]:port
+        if let Some(endpoint) = normalize_endpoint(&s) {
             banner::prompt("Server password", "[default hidden]")?;
             let key = get_password_or_default()?;
             render_startup(Some(username), None)?;
-            banner::success(format!("Connecting to {s}"));
-            break format!("{}&{}", s, key);
+            banner::success(format!("Connecting to {endpoint}"));
+            break format!("{}&{}", endpoint, key);
         }
         // 3️⃣ 邀请码
         if s.starts_with("/INVITE:") {

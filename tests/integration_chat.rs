@@ -17,6 +17,7 @@ use mistv::{
         MemberIdentity,
     },
     transport::packet::send_transport_payload_now,
+    util::endpoint::format_host_port,
 };
 use tempfile::TempDir;
 use tokio::{
@@ -250,7 +251,20 @@ async fn spawn_server(password: &str) -> (u16, JoinHandle<()>) {
 }
 
 async fn spawn_server_with_log(password: &str, log_path: Option<PathBuf>) -> (u16, JoinHandle<()>) {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+    spawn_server_with_bind_addr(password, log_path, "127.0.0.1:0", "127.0.0.1").await
+}
+
+async fn spawn_ipv6_server(password: &str) -> (u16, JoinHandle<()>) {
+    spawn_server_with_bind_addr(password, None, "[::1]:0", "::1").await
+}
+
+async fn spawn_server_with_bind_addr(
+    password: &str,
+    log_path: Option<PathBuf>,
+    bind_addr: &str,
+    ready_host: &str,
+) -> (u16, JoinHandle<()>) {
+    let listener = tokio::net::TcpListener::bind(bind_addr)
         .await
         .expect("ephemeral listener should bind");
     let port = listener
@@ -269,11 +283,9 @@ async fn spawn_server_with_log(password: &str, log_path: Option<PathBuf>) -> (u1
     });
 
     let mut ready = false;
+    let ready_addr = format_host_port(ready_host, port);
     for _ in 0..100 {
-        if tokio::net::TcpStream::connect(("127.0.0.1", port))
-            .await
-            .is_ok()
-        {
+        if tokio::net::TcpStream::connect(&ready_addr).await.is_ok() {
             ready = true;
             break;
         }
@@ -323,6 +335,46 @@ async fn clients_can_exchange_text_messages() -> Result<()> {
     settle_clients(&mut [&mut alice, &mut bob], 20).await;
 
     assert!(bob.has_text("hello bob"));
+
+    alice.out_tx.send("//~``~//".to_string()).ok();
+    bob.out_tx.send("//~``~//".to_string()).ok();
+    server_task.abort();
+    Ok(())
+}
+
+#[tokio::test]
+async fn clients_can_exchange_text_messages_over_ipv6_loopback() -> Result<()> {
+    let password = "integration-ipv6-pass";
+    let (port, server_task) = spawn_ipv6_server(password).await;
+    let server_addr = format!("[::1]:{port}");
+
+    let mut alice = TestClient::connect(
+        &server_addr,
+        password,
+        "alice",
+        "room-ipv6",
+        "room-key",
+        "CREATE",
+    )
+    .await?;
+    let mut bob = TestClient::connect(
+        &server_addr,
+        password,
+        "bob",
+        "room-ipv6",
+        "room-key",
+        "JOIN",
+    )
+    .await?;
+
+    alice.trigger_phase2_actions();
+    bob.trigger_phase2_actions();
+    settle_clients(&mut [&mut alice, &mut bob], 12).await;
+
+    alice.out_tx.send("hello over ipv6".to_string())?;
+    settle_clients(&mut [&mut alice, &mut bob], 20).await;
+
+    assert!(bob.has_text("hello over ipv6"));
 
     alice.out_tx.send("//~``~//".to_string()).ok();
     bob.out_tx.send("//~``~//".to_string()).ok();
