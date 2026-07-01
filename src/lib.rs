@@ -1314,10 +1314,40 @@ mod tests {
     }
 
     #[test]
+    fn test_invite_round_trip_preserves_bracketed_ipv6_endpoint() {
+        let (_blob_b64, blob_key_b64) =
+            create_invite_blob("room-v6".to_string(), "room-password".to_string())
+                .expect("invite blob should build");
+        let invite = create_invitation(
+            "[2001:db8::42]:6655".to_string(),
+            "invite-token-456".to_string(),
+            blob_key_b64.clone(),
+        )
+        .expect("invite should build");
+
+        let (server, token, parsed_blob_key) =
+            parse_invitation(&invite).expect("invite should parse");
+        assert_eq!(server, "[2001:db8::42]:6655");
+        assert_eq!(token, "invite-token-456");
+        assert_eq!(parsed_blob_key, blob_key_b64);
+    }
+
+    #[test]
     fn test_local_invite_request_round_trip_with_empty_room_key() {
         let line = build_local_invite_request_line("127.0.0.1:6655", "Public", "", "owner-cap-1");
         let parsed = parse_local_invite_request_line(&line).expect("request should parse");
         assert_eq!(parsed.server_addr, "127.0.0.1:6655");
+        assert_eq!(parsed.room_id, "Public");
+        assert_eq!(parsed.room_credential, "");
+        assert_eq!(parsed.owner_capability, "owner-cap-1");
+    }
+
+    #[test]
+    fn test_local_invite_request_round_trip_with_ipv6_endpoint() {
+        let line =
+            build_local_invite_request_line("[2001:db8::42]:6655", "Public", "", "owner-cap-1");
+        let parsed = parse_local_invite_request_line(&line).expect("request should parse");
+        assert_eq!(parsed.server_addr, "[2001:db8::42]:6655");
         assert_eq!(parsed.room_id, "Public");
         assert_eq!(parsed.room_credential, "");
         assert_eq!(parsed.owner_capability, "owner-cap-1");
