@@ -7,6 +7,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+#[cfg(any(windows, test))]
 use serde::Deserialize;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -75,6 +76,7 @@ fn is_advertisable_ipv4(ip: &Ipv4Addr) -> bool {
     !ip.is_loopback() && !ip.is_link_local() && !ip.is_unspecified() && *ip != Ipv4Addr::BROADCAST
 }
 
+#[cfg(any(windows, test))]
 #[derive(Debug, Deserialize)]
 struct WindowsIpRow {
     #[serde(rename = "InterfaceAlias")]
@@ -112,6 +114,7 @@ fn windows_ip_candidates() -> io::Result<Vec<AdvertiseAddrCandidate>> {
     Ok(Vec::new())
 }
 
+#[cfg(any(windows, test))]
 fn parse_windows_ip_candidates(json: &str) -> io::Result<Vec<AdvertiseAddrCandidate>> {
     if json.is_empty() || json == "null" {
         return Ok(Vec::new());
