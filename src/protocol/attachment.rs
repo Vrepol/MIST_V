@@ -127,6 +127,10 @@ pub fn build_file_manifest2_line(
     Ok(format!("/FILEMANIFEST2 {encoded}"))
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "wire builder keeps attachment chunk fields explicit"
+)]
 pub fn build_file_chunk2_line(
     group_id: &str,
     epoch: u64,

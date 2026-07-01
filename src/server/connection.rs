@@ -93,6 +93,10 @@ pub(crate) async fn handle_client(
     Ok(())
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "password handshake needs explicit connection context"
+)]
 async fn handle_password_client(
     mut lines: tokio::io::Lines<BufReader<tokio::net::tcp::OwnedReadHalf>>,
     writer: &mut tokio::net::tcp::OwnedWriteHalf,
@@ -203,6 +207,10 @@ async fn handle_password_client(
     enter_room_loop(lines, writer, rooms, invites, transport, handshake, logger).await
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "invite handshake needs explicit connection context"
+)]
 async fn handle_invite_client(
     mut lines: tokio::io::Lines<BufReader<tokio::net::tcp::OwnedReadHalf>>,
     writer: &mut tokio::net::tcp::OwnedWriteHalf,

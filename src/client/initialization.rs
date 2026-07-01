@@ -230,7 +230,7 @@ pub fn initial_serveraddr(username: &str) -> io::Result<String> {
             "Pick a preset, paste an invite, enter host:port, or start locally.",
         );
         for (i, server) in CLIENT_SERVER_PRESETS.iter().enumerate() {
-            banner::option(i + 1, &server.name, &server.addr);
+            banner::option(i + 1, server.name, server.addr);
         }
         banner::option("host", "Start local server", "");
         banner::prompt("Choice", "number / host:port / host / /INVITE:...")?;

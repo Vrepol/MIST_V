@@ -1,3 +1,5 @@
 /target
 /.ai_exports
 /.scripts
+.DS_Store
+/.agent/
