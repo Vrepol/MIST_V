@@ -120,26 +120,8 @@ pub fn handle_key(key: KeyEvent, ctx: &mut KeyCtx) -> ControlFlow {
             let _ = ctx.out_tx.send(build_local_notice_line(HELP_TEXT_EN));
         }
 
-        KeyCode::Char('i') if key.modifiers.contains(KeyModifiers::CONTROL) => {
-            let Some(owner_capability) = ctx.owner_capability.as_deref() else {
-                let _ = ctx.out_tx.send(build_local_notice_line(
-                    "只有当前房主连接可以申请一次性邀请码",
-                ));
-                return ControlFlow::Continue;
-            };
-            if ctx.server_addr.trim().is_empty() {
-                let _ = ctx.out_tx.send(build_local_notice_line(
-                    "当前连接没有可用的服务器地址，无法申请邀请码",
-                ));
-                return ControlFlow::Continue;
-            }
-            let request = build_local_invite_request_line(
-                ctx.server_addr,
-                ctx.room_id,
-                ctx.pwd,
-                owner_capability,
-            );
-            let _ = ctx.out_tx.send(request);
+        _ if is_invite_shortcut(&key) => {
+            request_invite(ctx);
         }
 
         KeyCode::Char(ch)
@@ -187,9 +169,13 @@ pub fn handle_key(key: KeyEvent, ctx: &mut KeyCtx) -> ControlFlow {
         KeyCode::Enter => {
             ctx.undo_mgr
                 .maybe_push(ctx.input, *ctx.cursor, OpKind::Insert);
-            let msg = ctx.input.trim();
+            let msg = ctx.input.trim().to_string();
             if !msg.is_empty() {
-                let _ = ctx.out_tx.send(msg.to_string());
+                if is_invite_command(&msg) {
+                    request_invite(ctx);
+                } else {
+                    let _ = ctx.out_tx.send(msg);
+                }
                 ctx.input.clear();
                 *ctx.cursor = 0;
             }
@@ -249,6 +235,33 @@ pub fn handle_key(key: KeyEvent, ctx: &mut KeyCtx) -> ControlFlow {
     ControlFlow::Continue
 }
 
+fn request_invite(ctx: &mut KeyCtx) {
+    let Some(owner_capability) = ctx.owner_capability.as_deref() else {
+        let _ = ctx.out_tx.send(build_local_notice_line(
+            "只有当前房主连接可以申请一次性邀请码",
+        ));
+        return;
+    };
+    if ctx.server_addr.trim().is_empty() {
+        let _ = ctx.out_tx.send(build_local_notice_line(
+            "当前连接没有可用的服务器地址，无法申请邀请码",
+        ));
+        return;
+    }
+    let request =
+        build_local_invite_request_line(ctx.server_addr, ctx.room_id, ctx.pwd, owner_capability);
+    let _ = ctx.out_tx.send(request);
+}
+
+fn is_invite_shortcut(key: &KeyEvent) -> bool {
+    matches!(key.code, KeyCode::F(2))
+        || matches!(key.code, KeyCode::Char('i' | 'I') if key.modifiers.contains(KeyModifiers::CONTROL))
+}
+
+fn is_invite_command(input: &str) -> bool {
+    input.eq_ignore_ascii_case("/invite")
+}
+
 fn nth_grapheme_byte_idx(s: &str, n: usize) -> usize {
     s.grapheme_indices(true)
         .nth(n)
@@ -301,5 +314,30 @@ impl UndoMgr {
 impl Default for UndoMgr {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_invite_command, is_invite_shortcut};
+    use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    #[test]
+    fn test_invite_shortcut_accepts_ctrl_i_and_f2() {
+        assert!(is_invite_shortcut(&KeyEvent::new(
+            KeyCode::Char('i'),
+            KeyModifiers::CONTROL
+        )));
+        assert!(is_invite_shortcut(&KeyEvent::new(
+            KeyCode::F(2),
+            KeyModifiers::NONE
+        )));
+    }
+
+    #[test]
+    fn test_invite_command_is_case_insensitive() {
+        assert!(is_invite_command("/invite"));
+        assert!(is_invite_command("/INVITE"));
+        assert!(!is_invite_command("/invite alice"));
     }
 }

@@ -131,6 +131,47 @@ fn windows_ip_candidates() -> io::Result<Vec<AdvertiseAddrCandidate>> {
     Ok(Vec::new())
 }
 
+#[cfg(unix)]
+fn unix_ip_candidates() -> io::Result<Vec<AdvertiseAddrCandidate>> {
+    let mut candidates = Vec::new();
+
+    if let Ok(output) = Command::new("ip")
+        .args(["-o", "addr", "show", "scope", "global"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+    {
+        if output.status.success() {
+            candidates.extend(parse_ip_addr_candidates(&String::from_utf8_lossy(
+                &output.stdout,
+            )));
+        }
+    }
+
+    if let Ok(output) = Command::new("ifconfig")
+        .arg("-a")
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+    {
+        if output.status.success() {
+            candidates.extend(parse_ifconfig_candidates(&String::from_utf8_lossy(
+                &output.stdout,
+            )));
+        }
+    }
+
+    candidates.dedup_by(|a, b| a.addr == b.addr);
+    Ok(candidates)
+}
+
+#[cfg(not(unix))]
+fn unix_ip_candidates() -> io::Result<Vec<AdvertiseAddrCandidate>> {
+    Ok(Vec::new())
+}
+
 #[cfg(any(windows, test))]
 fn parse_windows_ip_candidates(json: &str) -> io::Result<Vec<AdvertiseAddrCandidate>> {
     if json.is_empty() || json == "null" {
@@ -160,8 +201,101 @@ fn parse_windows_ip_candidates(json: &str) -> io::Result<Vec<AdvertiseAddrCandid
     Ok(candidates)
 }
 
+#[cfg(any(unix, test))]
+fn parse_ip_addr_candidates(output: &str) -> Vec<AdvertiseAddrCandidate> {
+    let mut candidates = Vec::new();
+
+    for line in output.lines() {
+        let tokens = line.split_whitespace().collect::<Vec<_>>();
+        let Some((family_idx, _)) = tokens
+            .iter()
+            .enumerate()
+            .find(|(_, token)| **token == "inet" || **token == "inet6")
+        else {
+            continue;
+        };
+        let Some(addr) = tokens.get(family_idx + 1) else {
+            continue;
+        };
+        let label = tokens
+            .get(1)
+            .map(|iface| format!("Interface {}", iface.trim_end_matches(':')))
+            .unwrap_or_else(|| "Interface".to_string());
+        push_parsed_ip_candidate(&mut candidates, label, addr);
+    }
+
+    candidates
+}
+
+#[cfg(any(unix, test))]
+fn parse_ifconfig_candidates(output: &str) -> Vec<AdvertiseAddrCandidate> {
+    let mut candidates = Vec::new();
+    let mut current_interface = "Interface".to_string();
+
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        let is_interface_header = !line.starts_with(' ') && !line.starts_with('\t');
+        if is_interface_header {
+            if let Some((iface, _)) = trimmed.split_once(':') {
+                current_interface = iface.to_string();
+                continue;
+            }
+        }
+
+        let mut parts = trimmed.split_whitespace();
+        let Some(family) = parts.next() else {
+            continue;
+        };
+        if family != "inet" && family != "inet6" {
+            continue;
+        }
+        let Some(addr) = parts.next() else {
+            continue;
+        };
+        push_parsed_ip_candidate(
+            &mut candidates,
+            format!("Interface {current_interface}"),
+            addr,
+        );
+    }
+
+    candidates
+}
+
+#[cfg(any(unix, test))]
+fn push_parsed_ip_candidate(
+    candidates: &mut Vec<AdvertiseAddrCandidate>,
+    label: String,
+    raw_addr: &str,
+) {
+    let without_prefix = raw_addr
+        .split_once('/')
+        .map(|(addr, _)| addr)
+        .unwrap_or(raw_addr);
+    let addr = without_prefix
+        .split_once('%')
+        .map(|(addr, _)| addr)
+        .unwrap_or(without_prefix);
+    let Ok(ip) = addr.parse::<IpAddr>() else {
+        return;
+    };
+    if !is_advertisable_ip(&ip) {
+        return;
+    }
+    let ip = ip.to_string();
+    if candidates.iter().any(|entry| entry.addr == ip) {
+        return;
+    }
+    candidates.push(AdvertiseAddrCandidate { label, addr: ip });
+}
+
 pub fn detect_advertise_candidates() -> io::Result<Vec<AdvertiseAddrCandidate>> {
     let mut candidates = windows_ip_candidates()?;
+    candidates.extend(unix_ip_candidates()?);
 
     if let Some(ip) = primary_local_ipv6() {
         let ip_str = ip.to_string();
@@ -246,28 +380,71 @@ pub fn spawn_local_server(port: u16, password: &str) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{candidate_rank, parse_windows_ip_candidates, AdvertiseAddrCandidate};
+    use super::{
+        candidate_rank, parse_ifconfig_candidates, parse_ip_addr_candidates,
+        parse_windows_ip_candidates, AdvertiseAddrCandidate,
+    };
 
     #[test]
     fn test_parse_windows_ip_candidates_filters_invalid_addrs() {
-        let json = r#"[{"InterfaceAlias":"Wi-Fi","IPAddress":"192.168.1.23"},{"InterfaceAlias":"IPv6","IPAddress":"2001:db8::42"},{"InterfaceAlias":"Loopback","IPAddress":"127.0.0.1"},{"InterfaceAlias":"LinkLocal","IPAddress":"fe80::1"}]"#;
+        let json = r#"[{"InterfaceAlias":"Wi-Fi","IPAddress":"192.168.1.23"},{"InterfaceAlias":"IPv6","IPAddress":"2606:4700:4700::1111"},{"InterfaceAlias":"Loopback","IPAddress":"127.0.0.1"},{"InterfaceAlias":"LinkLocal","IPAddress":"fe80::1"},{"InterfaceAlias":"UniqueLocal","IPAddress":"fd00::1"}]"#;
         let parsed =
             parse_windows_ip_candidates(json).expect("windows candidate json should parse");
         assert_eq!(parsed.len(), 2);
         assert!(parsed.iter().any(|item| item.addr == "192.168.1.23"));
-        assert!(parsed.iter().any(|item| item.addr == "2001:db8::42"));
+        assert!(parsed
+            .iter()
+            .any(|item| item.addr == "2606:4700:4700::1111"));
     }
 
     #[test]
     fn test_candidate_rank_prefers_ipv6_before_ipv4() {
         let ipv6 = AdvertiseAddrCandidate {
             label: "IPv6".to_string(),
-            addr: "2001:db8::42".to_string(),
+            addr: "2606:4700:4700::1111".to_string(),
         };
         let ipv4 = AdvertiseAddrCandidate {
             label: "IPv4".to_string(),
             addr: "192.168.1.23".to_string(),
         };
         assert!(candidate_rank(&ipv6) < candidate_rank(&ipv4));
+    }
+
+    #[test]
+    fn test_parse_ifconfig_candidates_finds_global_ipv6() {
+        let output = r#"lo0: flags=8049<UP,LOOPBACK,RUNNING,MULTICAST> mtu 16384
+	inet6 ::1 prefixlen 128
+en0: flags=8863<UP,BROADCAST,RUNNING,SIMPLEX,MULTICAST> mtu 1500
+	inet6 fe80::1%en0 prefixlen 64 secured scopeid 0xb
+	inet6 fd00::1 prefixlen 64 autoconf secured
+	inet6 2606:4700:4700::1111 prefixlen 64 autoconf secured
+	inet 192.168.1.23 netmask 0xffffff00 broadcast 192.168.1.255
+"#;
+        let parsed = parse_ifconfig_candidates(output);
+
+        assert!(parsed
+            .iter()
+            .any(|item| item.addr == "2606:4700:4700::1111"));
+        assert!(parsed.iter().any(|item| item.addr == "192.168.1.23"));
+        assert!(!parsed.iter().any(|item| item.addr.starts_with("fe80:")));
+        assert!(!parsed.iter().any(|item| item.addr.starts_with("fd00:")));
+        assert!(!parsed.iter().any(|item| item.addr == "::1"));
+    }
+
+    #[test]
+    fn test_parse_ip_addr_candidates_finds_global_ipv6() {
+        let output = r#"2: eth0    inet 192.168.1.23/24 brd 192.168.1.255 scope global eth0
+2: eth0    inet6 2606:4700:4700::1111/64 scope global dynamic
+3: wlan0    inet6 fe80::1/64 scope link
+4: tun0    inet6 fd00::1/64 scope global
+"#;
+        let parsed = parse_ip_addr_candidates(output);
+
+        assert!(parsed
+            .iter()
+            .any(|item| item.addr == "2606:4700:4700::1111"));
+        assert!(parsed.iter().any(|item| item.addr == "192.168.1.23"));
+        assert!(!parsed.iter().any(|item| item.addr.starts_with("fe80:")));
+        assert!(!parsed.iter().any(|item| item.addr.starts_with("fd00:")));
     }
 }

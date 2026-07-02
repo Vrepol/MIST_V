@@ -6,7 +6,8 @@ pub const HELP_TEXT: &str = r#"快捷键与命令说明：
 • Ctrl+C       → 复制当前选中消息
 • Ctrl+Z       → 撤销输入框
 • Ctrl+A       → 清空输入框
-• Ctrl+I       → 生成邀请码
+• Ctrl+I/F2    → 生成邀请码
+• /invite      → 生成邀请码
 • /send <path> → 发送任意文件
 • ←/→          → 移动光标（Ctrl+← 跳3字符，Ctrl+→ 跳至末尾）
 • ↑/↓          → 列表选上下（Ctrl+↑ 跳 5 条，Ctrl+↓ 跳到底部）
@@ -19,7 +20,8 @@ pub const HELP_TEXT_EN: &str = r#"Keyboard Shortcuts and Command Descriptions:
 • Ctrl+C       → Copy the currently selected message
 • Ctrl+Z       → Undo in input box
 • Ctrl+A       → Clear input box
-• Ctrl+I       → Generate invite code
+• Ctrl+I/F2    → Generate invite code
+• /invite      → Generate invite code
 • /send <path> → Send any file as attachment
 • ←/→          → Move cursor (Ctrl+← jump 3 characters, Ctrl+→ jump to end)
 • ↑/↓          → Navigate list up/down (Ctrl+↑ jump 5 items, Ctrl+↓ jump to bottom)

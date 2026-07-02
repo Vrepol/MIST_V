@@ -81,12 +81,34 @@ pub fn is_advertisable_ip(ip: &IpAddr) -> bool {
                 && !ip.is_unspecified()
                 && !ip.is_multicast()
                 && !is_ipv6_unicast_link_local(ip)
+                && !is_ipv6_unique_local(ip)
+                && !is_ipv6_site_local(ip)
+                && !is_ipv6_documentation(ip)
+                && !is_ipv6_mapped_or_compatible(ip)
         }
     }
 }
 
 fn is_ipv6_unicast_link_local(ip: &Ipv6Addr) -> bool {
     (ip.segments()[0] & 0xffc0) == 0xfe80
+}
+
+fn is_ipv6_unique_local(ip: &Ipv6Addr) -> bool {
+    (ip.segments()[0] & 0xfe00) == 0xfc00
+}
+
+fn is_ipv6_site_local(ip: &Ipv6Addr) -> bool {
+    (ip.segments()[0] & 0xffc0) == 0xfec0
+}
+
+fn is_ipv6_documentation(ip: &Ipv6Addr) -> bool {
+    let segments = ip.segments();
+    segments[0] == 0x2001 && segments[1] == 0x0db8
+}
+
+fn is_ipv6_mapped_or_compatible(ip: &Ipv6Addr) -> bool {
+    let segments = ip.segments();
+    segments[0..5] == [0, 0, 0, 0, 0] && (segments[5] == 0 || segments[5] == 0xffff)
 }
 
 #[cfg(test)]
@@ -143,12 +165,18 @@ mod tests {
             192, 168, 1, 10
         ))));
         assert!(is_advertisable_ip(&IpAddr::V6(
-            "2001:db8::42".parse::<Ipv6Addr>().unwrap()
+            "2606:4700:4700::1111".parse::<Ipv6Addr>().unwrap()
         )));
         assert!(!is_advertisable_ip(&IpAddr::V4(Ipv4Addr::LOCALHOST)));
         assert!(!is_advertisable_ip(&IpAddr::V6(Ipv6Addr::LOCALHOST)));
         assert!(!is_advertisable_ip(&IpAddr::V6(
             "fe80::1".parse::<Ipv6Addr>().unwrap()
+        )));
+        assert!(!is_advertisable_ip(&IpAddr::V6(
+            "fd00::1".parse::<Ipv6Addr>().unwrap()
+        )));
+        assert!(!is_advertisable_ip(&IpAddr::V6(
+            "2001:db8::42".parse::<Ipv6Addr>().unwrap()
         )));
     }
 }
