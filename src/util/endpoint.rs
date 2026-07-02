@@ -76,29 +76,16 @@ pub fn is_advertisable_ip(ip: &IpAddr) -> bool {
         IpAddr::V4(ip) => {
             !ip.is_loopback() && !ip.is_link_local() && !ip.is_unspecified() && !ip.is_broadcast()
         }
-        IpAddr::V6(ip) => {
-            !ip.is_loopback()
-                && !ip.is_unspecified()
-                && !ip.is_multicast()
-                && !is_ipv6_unicast_link_local(ip)
-                && !is_ipv6_unique_local(ip)
-                && !is_ipv6_site_local(ip)
-                && !is_ipv6_documentation(ip)
-                && !is_ipv6_mapped_or_compatible(ip)
-        }
+        IpAddr::V6(ip) => is_public_ipv6_candidate(ip),
     }
 }
 
-fn is_ipv6_unicast_link_local(ip: &Ipv6Addr) -> bool {
-    (ip.segments()[0] & 0xffc0) == 0xfe80
+pub fn is_public_ipv6_candidate(ip: &Ipv6Addr) -> bool {
+    is_ipv6_global_unicast(ip) && !is_ipv6_documentation(ip) && !is_ipv6_mapped_or_compatible(ip)
 }
 
-fn is_ipv6_unique_local(ip: &Ipv6Addr) -> bool {
-    (ip.segments()[0] & 0xfe00) == 0xfc00
-}
-
-fn is_ipv6_site_local(ip: &Ipv6Addr) -> bool {
-    (ip.segments()[0] & 0xffc0) == 0xfec0
+fn is_ipv6_global_unicast(ip: &Ipv6Addr) -> bool {
+    (ip.segments()[0] & 0xe000) == 0x2000
 }
 
 fn is_ipv6_documentation(ip: &Ipv6Addr) -> bool {
@@ -177,6 +164,15 @@ mod tests {
         )));
         assert!(!is_advertisable_ip(&IpAddr::V6(
             "2001:db8::42".parse::<Ipv6Addr>().unwrap()
+        )));
+        assert!(!is_advertisable_ip(&IpAddr::V6(
+            "::ffff:192.0.2.1".parse::<Ipv6Addr>().unwrap()
+        )));
+        assert!(!is_advertisable_ip(&IpAddr::V6(
+            "ff02::1".parse::<Ipv6Addr>().unwrap()
+        )));
+        assert!(!is_advertisable_ip(&IpAddr::V6(
+            "::".parse::<Ipv6Addr>().unwrap()
         )));
     }
 }

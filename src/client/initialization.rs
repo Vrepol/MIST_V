@@ -6,7 +6,10 @@ use std::io;
 use std::io::IsTerminal;
 use supports_color::{self, Stream as ColorStream};
 
-use crate::client::local_server::{detect_advertise_candidates, spawn_local_server};
+use crate::client::local_server::{
+    detect_advertise_candidates, detect_ipv6_capability, detect_ipv6_client_capability,
+    is_local_test_candidate, spawn_local_server,
+};
 use crate::config::{
     default_client_server, CLIENT_SERVER_PRESETS, DEFAULT_SERVER_PASSWORD, DEFAULT_SERVER_PORT,
 };
@@ -104,18 +107,26 @@ fn render_startup(username: Option<&str>, notice: Option<&str>) -> io::Result<()
 
 fn choose_local_advertised_addr(username: &str, port: u16) -> io::Result<Option<String>> {
     let candidates = detect_advertise_candidates()?;
+    let ipv6_capability = detect_ipv6_capability(&candidates);
     let mut notice: Option<String> = None;
 
     loop {
         render_startup(Some(username), notice.as_deref())?;
         banner::summary("Local port", port);
+        banner::summary("IPv6", ipv6_capability.summary());
         banner::section(
             "Invite Address",
             "Choose what other devices should connect to. Type back to change the port.",
         );
         for (i, candidate) in candidates.iter().enumerate() {
-            banner::option(i + 1, &candidate.addr, &candidate.label);
+            let hint = if is_local_test_candidate(candidate) {
+                "local test only"
+            } else {
+                &candidate.label
+            };
+            banner::option(i + 1, &candidate.addr, hint);
         }
+        banner::note(ipv6_capability.host_notice());
         banner::option("manual", "Custom IP or hostname", "");
         banner::option("back", "Return to local server", "");
         banner::prompt(
@@ -210,8 +221,11 @@ fn configure_local_server(username: &str) -> io::Result<Option<String>> {
         match spawn_local_server(port, &key) {
             Ok(()) => {
                 render_startup(Some(username), None)?;
-                banner::success(format!("Local server listening on 127.0.0.1:{port}"));
+                banner::success(format!("Local server listening on TCP port {port}"));
                 banner::note(format!("Advertised as {addr}"));
+                banner::note(format!(
+                    "IPv6 direct host requires inbound TCP {port} to be allowed by your OS/router firewall."
+                ));
                 return Ok(Some(format!("{addr}&{key}")));
             }
             Err(err) => {
@@ -224,8 +238,10 @@ fn configure_local_server(username: &str) -> io::Result<Option<String>> {
 pub fn initial_serveraddr(username: &str) -> io::Result<String> {
     // 交互循环直到拿到合法输入
     let mut notice: Option<String> = None;
+    let ipv6_client_capability = detect_ipv6_client_capability();
     let chosen = loop {
         render_startup(Some(username), notice.as_deref())?;
+        banner::summary("IPv6", ipv6_client_capability.summary());
         banner::section(
             "Connect",
             "Pick a preset, paste an invite, enter host:port, or start locally.",

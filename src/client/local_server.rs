@@ -10,12 +10,63 @@ use std::{
 #[cfg(any(windows, test))]
 use serde::Deserialize;
 
-use crate::util::endpoint::{format_host_port, is_advertisable_ip};
+use crate::util::endpoint::{format_host_port, is_advertisable_ip, is_public_ipv6_candidate};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AdvertiseAddrCandidate {
     pub label: String,
     pub addr: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ipv6Capability {
+    pub socket_available: bool,
+    pub outbound_route_addr: Option<Ipv6Addr>,
+    pub public_candidate_count: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Ipv6ClientCapability {
+    pub socket_available: bool,
+    pub outbound_route_available: bool,
+}
+
+impl Ipv6ClientCapability {
+    pub fn summary(&self) -> &'static str {
+        if self.socket_available && self.outbound_route_available {
+            "available"
+        } else if self.socket_available {
+            "socket available, no route"
+        } else {
+            "unavailable"
+        }
+    }
+}
+
+impl Ipv6Capability {
+    pub fn summary(&self) -> &'static str {
+        if !self.socket_available {
+            "unavailable"
+        } else if self.public_candidate_count > 0 {
+            "ready"
+        } else if self.outbound_route_addr.is_some() {
+            "route detected, no public candidate"
+        } else {
+            "socket available, no public route"
+        }
+    }
+
+    pub fn host_notice(&self) -> &'static str {
+        if !self.socket_available {
+            "IPv6 does not appear available on this system; use IPv4, manual address, or another network."
+        } else if self.public_candidate_count > 0 {
+            "IPv6 direct host still requires your TCP port to be allowed by the OS/router firewall."
+        } else if self.outbound_route_addr.is_some() {
+            "IPv6 route detected, but no public IPv6 address was found for invites."
+        } else {
+            "No public IPv6 route was detected; IPv6 direct host may not work from this network."
+        }
+    }
 }
 
 fn server_binary_candidates(current_exe: &Path) -> Vec<PathBuf> {
@@ -84,13 +135,22 @@ fn primary_local_ipv4() -> Option<Ipv4Addr> {
     }
 }
 
-fn primary_local_ipv6() -> Option<Ipv6Addr> {
+fn ipv6_socket_available() -> bool {
+    UdpSocket::bind("[::1]:0").is_ok() || UdpSocket::bind("[::]:0").is_ok()
+}
+
+fn primary_ipv6_route_addr() -> Option<Ipv6Addr> {
     let socket = UdpSocket::bind("[::]:0").ok()?;
     socket.connect("[2001:4860:4860::8888]:80").ok()?;
     match socket.local_addr().ok()?.ip() {
-        IpAddr::V6(ip) if is_advertisable_ip(&IpAddr::V6(ip)) => Some(ip),
+        IpAddr::V6(ip) => Some(ip),
         _ => None,
     }
+}
+
+fn primary_local_ipv6() -> Option<Ipv6Addr> {
+    let ip = primary_ipv6_route_addr()?;
+    is_public_ipv6_candidate(&ip).then_some(ip)
 }
 
 #[cfg(any(windows, test))]
@@ -343,14 +403,58 @@ pub fn detect_advertise_candidates() -> io::Result<Vec<AdvertiseAddrCandidate>> 
     Ok(candidates)
 }
 
+pub fn detect_ipv6_capability(candidates: &[AdvertiseAddrCandidate]) -> Ipv6Capability {
+    ipv6_capability_from_parts(
+        ipv6_socket_available(),
+        primary_ipv6_route_addr(),
+        candidates,
+    )
+}
+
+pub fn detect_ipv6_client_capability() -> Ipv6ClientCapability {
+    Ipv6ClientCapability {
+        socket_available: ipv6_socket_available(),
+        outbound_route_available: primary_ipv6_route_addr().is_some(),
+    }
+}
+
+fn ipv6_capability_from_parts(
+    socket_available: bool,
+    outbound_route_addr: Option<Ipv6Addr>,
+    candidates: &[AdvertiseAddrCandidate],
+) -> Ipv6Capability {
+    let public_candidate_count = candidates
+        .iter()
+        .filter(|candidate| {
+            candidate
+                .addr
+                .parse::<Ipv6Addr>()
+                .is_ok_and(|ip| is_public_ipv6_candidate(&ip))
+        })
+        .count();
+
+    Ipv6Capability {
+        socket_available,
+        outbound_route_addr,
+        public_candidate_count,
+    }
+}
+
 fn candidate_rank(candidate: &AdvertiseAddrCandidate) -> u8 {
     match candidate.addr.parse::<IpAddr>() {
-        Ok(IpAddr::V6(ip)) if !ip.is_loopback() => 0,
+        Ok(IpAddr::V6(ip)) if is_public_ipv6_candidate(&ip) => 0,
         Ok(IpAddr::V4(ip)) if !ip.is_loopback() => 1,
         Ok(IpAddr::V6(_)) => 2,
         Ok(IpAddr::V4(_)) => 3,
         Err(_) => 4,
     }
+}
+
+pub fn is_local_test_candidate(candidate: &AdvertiseAddrCandidate) -> bool {
+    candidate
+        .addr
+        .parse::<IpAddr>()
+        .is_ok_and(|ip| ip.is_loopback())
 }
 
 pub fn spawn_local_server(port: u16, password: &str) -> io::Result<()> {
@@ -381,13 +485,15 @@ pub fn spawn_local_server(port: u16, password: &str) -> io::Result<()> {
 #[cfg(test)]
 mod tests {
     use super::{
-        candidate_rank, parse_ifconfig_candidates, parse_ip_addr_candidates,
-        parse_windows_ip_candidates, AdvertiseAddrCandidate,
+        candidate_rank, ipv6_capability_from_parts, is_local_test_candidate,
+        parse_ifconfig_candidates, parse_ip_addr_candidates, parse_windows_ip_candidates,
+        AdvertiseAddrCandidate,
     };
+    use std::net::Ipv6Addr;
 
     #[test]
     fn test_parse_windows_ip_candidates_filters_invalid_addrs() {
-        let json = r#"[{"InterfaceAlias":"Wi-Fi","IPAddress":"192.168.1.23"},{"InterfaceAlias":"IPv6","IPAddress":"2606:4700:4700::1111"},{"InterfaceAlias":"Loopback","IPAddress":"127.0.0.1"},{"InterfaceAlias":"LinkLocal","IPAddress":"fe80::1"},{"InterfaceAlias":"UniqueLocal","IPAddress":"fd00::1"}]"#;
+        let json = r#"[{"InterfaceAlias":"Wi-Fi","IPAddress":"192.168.1.23"},{"InterfaceAlias":"IPv6","IPAddress":"2606:4700:4700::1111"},{"InterfaceAlias":"Loopback","IPAddress":"127.0.0.1"},{"InterfaceAlias":"IPv6Loopback","IPAddress":"::1"},{"InterfaceAlias":"LinkLocal","IPAddress":"fe80::1"},{"InterfaceAlias":"UniqueLocal","IPAddress":"fd00::1"},{"InterfaceAlias":"Doc","IPAddress":"2001:db8::1"},{"InterfaceAlias":"Mapped","IPAddress":"::ffff:192.0.2.1"}]"#;
         let parsed =
             parse_windows_ip_candidates(json).expect("windows candidate json should parse");
         assert_eq!(parsed.len(), 2);
@@ -395,6 +501,9 @@ mod tests {
         assert!(parsed
             .iter()
             .any(|item| item.addr == "2606:4700:4700::1111"));
+        assert!(!parsed.iter().any(|item| item.addr == "::1"));
+        assert!(!parsed.iter().any(|item| item.addr == "2001:db8::1"));
+        assert!(!parsed.iter().any(|item| item.addr == "::ffff:192.0.2.1"));
     }
 
     #[test]
@@ -408,6 +517,60 @@ mod tests {
             addr: "192.168.1.23".to_string(),
         };
         assert!(candidate_rank(&ipv6) < candidate_rank(&ipv4));
+    }
+
+    #[test]
+    fn test_local_test_candidate_detects_loopback_only() {
+        let loopback = AdvertiseAddrCandidate {
+            label: "IPv6 loopback".to_string(),
+            addr: "::1".to_string(),
+        };
+        let public = AdvertiseAddrCandidate {
+            label: "Public IPv6".to_string(),
+            addr: "2606:4700:4700::1111".to_string(),
+        };
+        assert!(is_local_test_candidate(&loopback));
+        assert!(!is_local_test_candidate(&public));
+    }
+
+    #[test]
+    fn test_ipv6_capability_summaries() {
+        let candidates = vec![AdvertiseAddrCandidate {
+            label: "Public IPv6".to_string(),
+            addr: "2606:4700:4700::1111".to_string(),
+        }];
+        let ready = ipv6_capability_from_parts(true, Some(Ipv6Addr::LOCALHOST), &candidates);
+        assert_eq!(ready.summary(), "ready");
+
+        let unavailable = ipv6_capability_from_parts(false, None, &[]);
+        assert_eq!(unavailable.summary(), "unavailable");
+
+        let route_only = ipv6_capability_from_parts(true, Some(Ipv6Addr::LOCALHOST), &[]);
+        assert_eq!(route_only.summary(), "route detected, no public candidate");
+
+        let socket_only = ipv6_capability_from_parts(true, None, &[]);
+        assert_eq!(socket_only.summary(), "socket available, no public route");
+    }
+
+    #[test]
+    fn test_ipv6_client_capability_summaries() {
+        let ready = super::Ipv6ClientCapability {
+            socket_available: true,
+            outbound_route_available: true,
+        };
+        assert_eq!(ready.summary(), "available");
+
+        let socket_only = super::Ipv6ClientCapability {
+            socket_available: true,
+            outbound_route_available: false,
+        };
+        assert_eq!(socket_only.summary(), "socket available, no route");
+
+        let unavailable = super::Ipv6ClientCapability {
+            socket_available: false,
+            outbound_route_available: false,
+        };
+        assert_eq!(unavailable.summary(), "unavailable");
     }
 
     #[test]
